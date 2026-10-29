@@ -291,7 +291,12 @@ function initTrailerModal() {
     if (modalVideo) {
         modalVideo.addEventListener('error', () => {
             const cur = modalVideo.currentSrc || modalVideo.src || '';
-            if (!cur.includes('experience-1080p.mp4')) {
+            if (cur.includes('github.com') || cur.includes('release-assets')) {
+                console.warn('Trailer 4K remote failed, trying local 4K');
+                modalVideo.src = 'assets/experience-4k.mp4';
+                modalVideo.load();
+                modalVideo.play().catch(() => {});
+            } else if (!cur.includes('experience-1080p.mp4')) {
                 console.warn('Trailer video failed, falling back to 1080p:', cur);
                 modalVideo.src = 'assets/experience-1080p.mp4';
                 modalVideo.load();
@@ -727,15 +732,17 @@ function initCinemaScopes() {
         });
     });
 
-    // Multi-Resolution Video Setup (Native Master Files + HLS fallback)
+    // Multi-Resolution Video Setup (Pristine 4K Master via CDN + Local High-Definition Assets)
+    const MASTER_4K_URL = "https://github.com/Haaseth-Abhiram/Varanasi-Movie-Website/releases/download/v1.0.0/experience-4k.mp4";
     const RESOLUTION_SOURCES = {
-        2160: "assets/experience-4k.mp4",
+        2160: MASTER_4K_URL,
         1080: "assets/experience-1080p.mp4",
         720: "assets/experience-720p.mp4",
         480: "assets/experience-480p.mp4"
     };
 
     let activeResolution = 2160;
+    let currentLoadedSrc = MASTER_4K_URL;
     const qualityToast = document.getElementById('scope-quality-toast');
     let toastTimer = null;
 
@@ -763,12 +770,21 @@ function initCinemaScopes() {
         }
     }
 
-    // Resilient fallback: If any resolution file ever fails, seamlessly fall back to 1080p
+    // Resilient multi-tier fallback:
+    // 1. If GitHub Release 4K has network issue -> fall back to local 4K (assets/experience-4k.mp4)
+    // 2. If local 4K has issue -> fall back to 1080p Full HD (assets/experience-1080p.mp4)
     videoEl.addEventListener('error', () => {
         const cur = videoEl.currentSrc || videoEl.src || '';
         console.warn('Cinema scope video error on source:', cur);
-        if (!cur.includes('experience-1080p.mp4')) {
+        if (cur.includes('github.com') || cur.includes('release-assets')) {
+            console.log('Falling back to local 4K source');
+            currentLoadedSrc = "assets/experience-4k.mp4";
+            videoEl.src = "assets/experience-4k.mp4";
+            videoEl.load();
+            startVideoPlayback();
+        } else if (!cur.includes('experience-1080p.mp4')) {
             console.log('Falling back to 1080p Full HD source');
+            currentLoadedSrc = RESOLUTION_SOURCES[1080];
             videoEl.src = RESOLUTION_SOURCES[1080];
             videoEl.load();
             startVideoPlayback();
@@ -776,7 +792,7 @@ function initCinemaScopes() {
         }
     });
 
-    // Set initial 4K video source immediately with zero lag
+    // Set initial pristine 4K video source immediately
     videoEl.src = RESOLUTION_SOURCES[2160];
     videoEl.load();
     startVideoPlayback();
@@ -964,10 +980,9 @@ function initCinemaScopes() {
             const curTime = videoEl.currentTime || 0;
             const wasPlaying = !videoEl.paused;
             const isMuted = videoEl.muted;
-            const currentSrc = videoEl.currentSrc || videoEl.src || '';
-            const filename = targetSrc.split('/').pop();
 
-            if (!currentSrc.includes(filename)) {
+            if (currentLoadedSrc !== targetSrc) {
+                currentLoadedSrc = targetSrc;
                 videoEl.src = targetSrc;
                 videoEl.currentTime = curTime;
                 videoEl.muted = isMuted;
