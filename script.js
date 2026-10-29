@@ -288,6 +288,18 @@ function initTrailerModal() {
 
     if (!modal) return;
 
+    if (modalVideo) {
+        modalVideo.addEventListener('error', () => {
+            const cur = modalVideo.currentSrc || modalVideo.src || '';
+            if (!cur.includes('experience-1080p.mp4')) {
+                console.warn('Trailer video failed, falling back to 1080p:', cur);
+                modalVideo.src = 'assets/experience-1080p.mp4';
+                modalVideo.load();
+                modalVideo.play().catch(() => {});
+            }
+        });
+    }
+
     // Open modal function
     function openModal(e) {
         if (e && e.stopPropagation) e.stopPropagation();
@@ -737,8 +749,6 @@ function initCinemaScopes() {
         }, 1600);
     }
 
-    const hlsUrl = "https://pub-36eeef5229fc41e1bb5e30088592f214.r2.dev/hls/master.m3u8";
-
     function startVideoPlayback() {
         videoEl.muted = true;
         const playPromise = videoEl.play();
@@ -753,37 +763,23 @@ function initCinemaScopes() {
         }
     }
 
-    // Set initial pristine 4K video source immediately for zero-lag playback
+    // Resilient fallback: If any resolution file ever fails, seamlessly fall back to 1080p
+    videoEl.addEventListener('error', () => {
+        const cur = videoEl.currentSrc || videoEl.src || '';
+        console.warn('Cinema scope video error on source:', cur);
+        if (!cur.includes('experience-1080p.mp4')) {
+            console.log('Falling back to 1080p Full HD source');
+            videoEl.src = RESOLUTION_SOURCES[1080];
+            videoEl.load();
+            startVideoPlayback();
+            if (resLabel) resLabel.textContent = '1080p';
+        }
+    });
+
+    // Set initial 4K video source immediately with zero lag
     videoEl.src = RESOLUTION_SOURCES[2160];
     videoEl.load();
     startVideoPlayback();
-
-    // Check optional HLS stream in background
-    if (window.Hls && Hls.isSupported()) {
-        const hls = new Hls({
-            enableWorker: true,
-            lowLatencyMode: false,
-            backBufferLength: 90,
-            maxBufferLength: 30
-        });
-        hls.loadSource(hlsUrl);
-        hls.on(Hls.Events.MANIFEST_PARSED, (event, data) => {
-            console.log('HLS manifest parsed, available levels:', data.levels);
-            window._hlsScope = hls;
-            hls.attachMedia(videoEl);
-            const idx4k = data.levels.findIndex(l => l.height === 2160);
-            if (idx4k !== -1) {
-                hls.currentLevel = idx4k;
-            }
-        });
-        hls.on(Hls.Events.ERROR, (event, data) => {
-            if (data.fatal) {
-                console.log('HLS not accessible, using high-definition native sources:', data);
-                hls.destroy();
-                window._hlsScope = null;
-            }
-        });
-    }
 
     // Playback Controls
     function togglePlay(e) {
@@ -956,23 +952,7 @@ function initCinemaScopes() {
         if (resLabel) resLabel.textContent = badgeText;
         showQualityToast(toastText);
 
-        // 3. Apply to HLS if active
-        if (window._hlsScope && window._hlsScope.levels && window._hlsScope.levels.length > 0) {
-            const hls = window._hlsScope;
-            if (q === -1) {
-                hls.currentLevel = -1;
-            } else {
-                const idx = hls.levels.findIndex(lvl => lvl.height === q);
-                if (idx !== -1) {
-                    hls.currentLevel = idx;
-                } else {
-                    hls.currentLevel = -1;
-                }
-            }
-            return;
-        }
-
-        // 4. Native high-definition source switching with seamless timestamp preservation
+        // 3. Native high-definition source switching with seamless timestamp preservation
         let targetSrc = RESOLUTION_SOURCES[q];
         if (q === -1 || !targetSrc) {
             targetSrc = (window.innerWidth >= 1920 || window.devicePixelRatio >= 1.5)
